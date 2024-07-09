@@ -1,0 +1,68 @@
+# Install necessary packages
+if (!requireNamespace("devtools", quietly = TRUE)) install.packages("devtools")
+library(devtools)
+if (!requireNamespace("tidyverse", quietly = TRUE)) install.packages("tidyverse")
+library(tidyverse)
+install_github("BillPetti/baseballr")
+if (!requireNamespace("DBI", quietly = TRUE)) install.packages("DBI")
+library(DBI)
+if (!requireNamespace("RSQLite", quietly = TRUE)) install.packages("RSQLite")
+library(RSQLite)
+if (!requireNamespace("git2r", quietly = TRUE)) install.packages("git2r")
+library(git2r)
+if (!requireNamespace("lubridate", quietly = TRUE)) install.packages("lubridate")
+library(lubridate)
+
+# Function to scrape data for a given date range
+scrape_data <- function(start_date, end_date) {
+  baseballr::scrape_statcast_savant(start_date = start_date, end_date = end_date, player_type = 'batter')
+}
+
+# Set the start and end dates in Central Time Zone
+start_date <- as.Date('2019-03-28', tz = "America/Chicago")
+end_date <- as.Date('2019-09-29', tz = "America/Chicago")  # Adjust the end date as needed
+
+# Initialize an empty list to store the data
+all_data <- list()
+
+# Loop through each day in the date range and scrape the data
+current_date <- start_date
+while (current_date <= end_date) {
+  print(paste("Scraping data for:", current_date))
+  daily_data <- scrape_data(current_date, current_date)
+  all_data[[as.character(current_date)]] <- daily_data
+  current_date <- current_date + days(1)
+}
+
+# Combine all the daily data into one dataframe
+SavantData19 = bind_rows(all_data)
+
+# Define the file paths for saving the CSV and DB files
+csv_file_path <- "/Volumes/files/data/SavantData19.csv"
+db_file_path <- "/Volumes/files/data/SavantData19.db"
+
+# Save the combined data to a CSV file in the specified directory
+write_csv(SavantData19, csv_file_path)
+
+# Save the combined data to a SQLite database in the specified directory
+conn <- dbConnect(RSQLite::SQLite(), db_file_path)
+dbWriteTable(conn, "SavantData19", SavantData19, overwrite = TRUE)
+dbDisconnect(conn)
+
+# Example query: Display top HR hitters on pitches 95+ MPH
+top_hr_hitters <- SavantData19 %>%
+  select(player_name, events, launch_speed, release_speed) %>%
+  filter(events == "home_run", release_speed >= 95) %>%
+  group_by(player_name) %>%
+  summarise(HR = n(), AvgEV = mean(launch_speed)) %>%
+  arrange(desc(HR))
+
+print(top_hr_hitters)
+
+# Push the script to GitHub
+repo_path <- "/Volumes/files/biased_variance/2015_regular_season.R"
+repo <- repository(repo_path)
+add(repo, "/Volumes/files/biased_variance/2015_regular_season.R")
+commit(repo, "Add 2015_regular_season.R script")
+credentials <- cred_user_pass("your_username", "your_personal_access_token")
+push(repo, credentials = credentials)
