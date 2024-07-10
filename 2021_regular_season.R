@@ -1,103 +1,64 @@
-# Load the required packages
+# Install and load necessary libraries
+if (!requireNamespace("devtools", quietly = TRUE)) install.packages("devtools")
+if (!requireNamespace("baseballr", quietly = TRUE)) install.packages("baseballr")
+if (!requireNamespace("dplyr", quietly = TRUE)) install.packages("dplyr")
+if (!requireNamespace("lubridate", quietly = TRUE)) install.packages("lubridate")
+if (!requireNamespace("readr", quietly = TRUE)) install.packages("readr")
+devtools::install_github(repo = "BillPetti/baseballr", force = TRUE)
+if (!requireNamespace("DBI", quietly = TRUE)) install.packages("DBI")
+if (!requireNamespace("RSQLite", quietly = TRUE)) install.packages("RSQLite")
+
+library(devtools)
 library(baseballr)
-library(tidyverse)
-
-# Function to scrape data for a given date range
-scrape_and_combine_2021 <- function(start_date, end_date, player_type) {
-  print(paste("Scraping data for", start_date, "to", end_date))
-  data <- baseballr::scrape_statcast_savant(start_date = start_date,
-                                            end_date = end_date,
-                                            player_type = player_type)
-  return(data)
-}
-
-# Define the start and end dates for the 2021 season
-start_date <- as.Date('2021-04-01')
-end_date <- as.Date('2021-10-03')
-
-# Generate a sequence of dates from start_date to end_date
-date_ranges_2021 <- lapply(seq(start_date, end_date, by = "day"), function(date) {
-  list(start_date = as.character(date), end_date = as.character(date))
-})
-
-# Initialize list to store data frames for each day
-daily_data_frames_2021 <- list()
-
-# Loop through each date range, scrape data, and store in daily data frames
-for (date_range in date_ranges_2021) {
-  start_date <- date_range$start_date
-  end_date <- date_range$end_date
-  
-  # Scrape data for current date range
-  data_2021 <- scrape_and_combine_2021(start_date = start_date,
-                                       end_date = end_date,
-                                       player_type = 'batter')
-  
-  # Store data in a data frame
-  daily_data_frames_2021[[start_date]] <- data_2021
-}
-
-# Print the first few elements of the list to verify
-head(daily_data_frames_2021)
-
-#find where the save will be
-getwd() #should be /Volumes/files/mlb/savant_daily_data/2021
-
-#if not in proper wd
-setwd("/Volumes/files/mlb/savant_daily_data/2021")
-getwd()
-
-#save the data
-#save.image("regular_season.RData")
-
-# Load the RData file
-load("regular_season.RData")
-
-# Verify the loaded objects
-print(ls())
-
-# Inspect the structure of daily_data_frames_2021
-print(str(daily_data_frames_2021))
-
-# Function to standardize list items to a consistent structure
-standardize_list_item <- function(item) {
-  # Ensure item is a dataframe
-  item <- as.data.frame(item)
-  
-  # Add missing columns with NA values
-  all_columns <- unique(unlist(lapply(daily_data_frames_2021, names)))
-  missing_columns <- setdiff(all_columns, names(item))
-  for (col in missing_columns) {
-    item[[col]] <- NA
-  }
-  
-  # Reorder columns to match the overall structure
-  item <- item[all_columns]
-  
-  return(item)
-}
-
-# Standardize each list item
-daily_data_frames_2021 <- lapply(daily_data_frames_2021, standardize_list_item)
-
-# Combine the standardized list items into a single dataframe
-daily_data_frames_2021 <- do.call(rbind, daily_data_frames_2021)
-
-# Verify the structure
-print(str(daily_data_frames_2021))
-
-# Load necessary libraries
+library(dplyr)
+library(lubridate)
+library(readr)
 library(DBI)
 library(RSQLite)
 
-# Create a connection to a new SQLite database
-conn <- dbConnect(RSQLite::SQLite(), "daily_data_frames_2021.db")
+# Set the start and end dates in Central Time Zone
+start_date <- as.Date('2021-04-01', tz = "America/Chicago")
+end_date <- as.Date('2021-10-03', tz = "America/Chicago")
 
-# Write the dataframe to the database
-dbWriteTable(conn, "daily_data_frames_2021", daily_data_frames_2021)
+# Generate a data frame containing all dates from start_date to end_date
+date_list <- seq.Date(start_date, end_date, by = "day")
+date_df <- data.frame(date = date_list)
 
-# List the tables in the database to confirm the operation
-print(dbListTables(conn))
+# Read the column types file
+column_types <- readRDS("/Volumes/files/biased_variance/statcast_column_types.RDS")
 
-# Disconnect from the database
-dbDisconnect(conn)
+# Initialize an empty data frame to store all data
+all_data <- tibble()
+
+# Function to scrape data for a given date
+scrape_data_for_date <- function(date) {
+  tryCatch({
+    baseballr::scrape_statcast_savant(start_date = date, end_date = date)
+  }, error = function(e) {
+    warning(paste("No valid data found or error occurred for date:", date))
+    return(NULL)
+  })
+}
+
+# Loop through each date in the date_df and scrape data
+for (i in 1:nrow(date_df)) {
+  current_date <- date_df$date[i]
+  print(paste("Scraping data for date:", current_date))
+  
+  # Scrape data and ensure column types match
+  daily_data <- scrape_data_for_date(current_date)
+  
+  # Check if the data frame is not NULL and has rows
+  if (!is.null(daily_data) && nrow(daily_data) > 0) {
+    all_data <- bind_rows(all_data, daily_data)
+  }
+}
+
+# Print the final data
+print(all_data)
+
+# Define the file paths for saving the CSV and DB files
+csv_file_path <- "/Volumes/files/data/mlb/savant/2021/pbp_regular_season_2021.csv"
+db_file_path <- "/Volumes/files/data/mlb/savant/2021/pbp_regular_season_2021.db"
+
+#
