@@ -58,3 +58,16 @@ for (i in 1:nrow(date_df)) {
 print(all_data)
 
 # Define the file paths for saving the CSV and DB files
+csv_file_path <- "/Volumes/files/data/mlb/savant/2017/pbp_regular_season_2017.csv"
+db_file_path <- "/Volumes/files/data/mlb/savant/2017/pbp_regular_season_2017.db"
+
+# Save the combined data to a CSV file in the specified directory
+write_csv(all_data, csv_file_path)
+
+# Save the combined data to a SQLite database in the specified directory
+conn <- dbConnect(RSQLite::SQLite(), db_file_path)
+dbWriteTable(conn, "all_data", all_data, overwrite = TRUE)
+dbDisconnect(conn)
+
+# Save the workspace image
+save.image("/Volumes/files/data/mlb/savant/2017/pbp_regular_season_2017.RData")
